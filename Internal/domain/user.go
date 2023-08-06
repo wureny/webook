@@ -1,8 +1,14 @@
 package domain
 
+import "time"
+
 type User struct {
-	Addr Address
+	Id       uint64
+	Email    string
+	Password string
+	Ctime    time.Time
 }
 
-type Address struct {
+/*type Address struct {
 }
+*/
