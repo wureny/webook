@@ -66,6 +66,7 @@ func (u *UserHandler) SignUp(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "密码必须大于8位，包含数字、特殊字符")
 		return
 	}
+	fmt.Println("web.test")
 	err = u.svc.SignUp(ctx, domain.User{
 		Email:    req.Email,
 		Password: req.Password,

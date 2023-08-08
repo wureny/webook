@@ -46,7 +46,7 @@ func main() {
 	e.Run(":8080")
 }
 func initDB() *gorm.DB {
-	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webooktest"))
+	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webooktest?charset=utf8mb4&parseTime=True&loc=Local"))
 	if err != nil {
 		// 我只会在初始化过程中 panic
 		// panic 相当于整个 goroutine 结束

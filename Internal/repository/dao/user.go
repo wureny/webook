@@ -3,6 +3,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"time"
@@ -38,6 +39,7 @@ func (dao *UserDAO) Insert(ctx context.Context, u User) error {
 	now := time.Now().UnixMilli()
 	u.Utime = now
 	u.Ctime = now
+	fmt.Println(u)
 	err := dao.db.WithContext(ctx).Create(&u).Error
 	if mysqlErr, ok := err.(*mysql.MySQLError); ok {
 		const uniqueConflictsErrNo uint16 = 1062
@@ -52,5 +54,8 @@ func (dao *UserDAO) FindByEmail(ctx context.Context, email string) (User, error)
 	var u User
 	err := dao.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
 	//err := dao.db.WithContext(ctx).First(&u, "email = ?", email).Error
-	return u, err
+	if err == nil {
+		return u, err
+	}
+	return u, nil
 }
