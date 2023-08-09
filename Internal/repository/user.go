@@ -44,3 +44,22 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (domain.
 		Password: u.Password,
 	}, nil
 }
+func (r *UserRepository) UpdateInfo(ctx context.Context, u domain.User) error {
+	err := r.dao.Update(ctx, u.Birthday, u.Bio, u.UserName, u.Id)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (r *UserRepository) GetUserInfo(ctx context.Context, id uint64) (domain.User, error) {
+	s, err := r.dao.GetUser(ctx, id)
+	if err != nil {
+		return domain.User{}, err
+	}
+	var u domain.User
+	u.Email = s.Email
+	u.Birthday = s.Birthday
+	u.Bio = s.Bio
+	u.UserName = s.UserName
+	return u, nil
+}

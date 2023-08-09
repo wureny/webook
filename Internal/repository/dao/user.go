@@ -31,7 +31,10 @@ type User struct {
 	//创建时间：毫秒数
 	Ctime int64
 	//更新时间：毫秒数
-	Utime int64
+	Utime    int64
+	Birthday string
+	UserName string
+	Bio      string
 }
 
 func (dao *UserDAO) Insert(ctx context.Context, u User) error {
@@ -56,6 +59,26 @@ func (dao *UserDAO) FindByEmail(ctx context.Context, email string) (User, error)
 	//err := dao.db.WithContext(ctx).First(&u, "email = ?", email).Error
 	if err == nil {
 		return u, err
+	}
+	return u, nil
+}
+func (dao *UserDAO) Update(ctx context.Context, Bir string, Bio string, username string, id uint64) error {
+	var u User
+	err := dao.db.WithContext(ctx).Where("Id=?", id).First(&u).Error
+	if err != nil {
+		return err
+	}
+	u.Birthday = Bir
+	u.Bio = Bio
+	u.UserName = username
+	dao.db.Save(&u)
+	return nil
+}
+func (dao *UserDAO) GetUser(ctx context.Context, id uint64) (User, error) {
+	var u User
+	err := dao.db.WithContext(ctx).Where("Id=?", id).First(&u).Error
+	if err != nil {
+		return User{}, err
 	}
 	return u, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/wureny/webook/webook/Internal/domain"
 	"github.com/wureny/webook/webook/Internal/service"
 	"net/http"
+	"time"
 )
 
 type UserHandler struct {
@@ -114,9 +115,63 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 	return
 }
 func (u *UserHandler) Edit(ctx *gin.Context) {
-
+	type edit struct {
+		Birthday string `json:"birthday"`
+		UserName string `json:"userName"`
+		Bio      string `json:"bio"`
+	}
+	session := sessions.Default(ctx)
+	userid := session.Get("userId")
+	var s edit
+	err := ctx.Bind(&s)
+	if err != nil {
+		ctx.String(http.StatusOK, "miss something")
+		return
+	}
+	_, er := time.Parse("2006-01-02", s.Birthday)
+	if er != nil {
+		ctx.String(http.StatusOK, "wrong birthday")
+		return
+	}
+	maxlen := 500
+	if len(s.Bio) > maxlen {
+		ctx.String(http.StatusOK, "Bio is too long!")
+		return
+	}
+	userID, _ := userid.(uint64)
+	e := u.svc.Edit(ctx, domain.User{
+		Id:       userID,
+		Birthday: s.Birthday,
+		UserName: s.UserName,
+		Bio:      s.Bio,
+	})
+	if e != nil {
+		ctx.String(http.StatusOK, "edit未成功")
+		return
+	}
+	ctx.String(http.StatusOK, "edit成功")
 }
 
 func (u *UserHandler) Profile(ctx *gin.Context) {
-
+	type Userinfo struct {
+		Email    string
+		Birthday string
+		Bio      string
+		UserName string
+	}
+	session := sessions.Default(ctx)
+	userid := session.Get("userId")
+	userId := userid.(uint64)
+	user, err := u.svc.GetUser(ctx, userId)
+	if err != nil {
+		ctx.String(http.StatusOK, "failed to get the info")
+		return
+	}
+	tmp := Userinfo{
+		Email:    user.Email,
+		Birthday: user.Birthday,
+		Bio:      user.Bio,
+		UserName: user.UserName,
+	}
+	ctx.JSON(http.StatusOK, tmp)
 }

@@ -7,6 +7,9 @@ type User struct {
 	Email    string
 	Password string
 	Ctime    time.Time
+	Birthday string
+	UserName string
+	Bio      string
 }
 
 /*type Address struct {
