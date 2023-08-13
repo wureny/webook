@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
+	"github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
 	"github.com/wureny/webook/webook/Internal/repository"
 	"github.com/wureny/webook/webook/Internal/repository/dao"
@@ -12,6 +12,7 @@ import (
 	"github.com/wureny/webook/webook/Internal/web/middleware"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -89,7 +90,20 @@ func initWebServer() *gin.Engine {
 			return strings.Contains(origin, "yourcompany.com")
 		},
 	}))
-	store := cookie.NewStore([]byte("secret"))
+	e.NoMethod(func(g *gin.Context) {
+		g.String(405, "no such method for this route")
+	})
+	e.NoRoute(func(g *gin.Context) {
+		g.String(http.StatusNotFound, "no such page!")
+	})
+	//store := cookie.NewStore([]byte("secret"))
+	store, err := redis.NewStore(16,
+		"tcp", "localhost:6379", "",
+		[]byte("95osj3fUD7fo0mlYdDbncXz4VD2igvf0"), []byte("0Pf2r0wZBpXVXlQNdpwCXN4ncnlnZSc3"))
+
+	if err != nil {
+		panic(err)
+	}
 	e.Use(sessions.Sessions("mysession", store))
 	e.Use(middleware.NewLoginMiddlewareBuilder().
 		IgnorePaths("/users/signup").

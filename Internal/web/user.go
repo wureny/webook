@@ -110,9 +110,22 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 	// 我可以随便设置值了
 	// 你要放在 session 里面的值
 	sess.Set("userId", user.Id)
+	sess.Options(sessions.Options{
+		MaxAge:   60,
+		Secure:   false,
+		HttpOnly: true,
+	})
 	sess.Save()
 	ctx.String(http.StatusOK, "登录成功")
 	return
+}
+func (u *UserHandler) LogOut(ctx *gin.Context) {
+	sess := sessions.Default(ctx)
+	sess.Options(sessions.Options{
+		MaxAge: -1,
+	})
+	sess.Save()
+	ctx.String(http.StatusOK, "log out!")
 }
 func (u *UserHandler) Edit(ctx *gin.Context) {
 	type edit struct {
