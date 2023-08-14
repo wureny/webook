@@ -2,8 +2,6 @@ package main
 
 import (
 	"github.com/gin-contrib/cors"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
 	"github.com/wureny/webook/webook/Internal/repository"
 	"github.com/wureny/webook/webook/Internal/repository/dao"
@@ -97,16 +95,19 @@ func initWebServer() *gin.Engine {
 		g.String(http.StatusNotFound, "no such page!")
 	})
 	//store := cookie.NewStore([]byte("secret"))
-	store, err := redis.NewStore(16,
-		"tcp", "localhost:6379", "",
-		[]byte("95osj3fUD7fo0mlYdDbncXz4VD2igvf0"), []byte("0Pf2r0wZBpXVXlQNdpwCXN4ncnlnZSc3"))
+	//	store, err := redis.NewStore(16,
+	//		"tcp", "localhost:6379", "",
+	//		[]byte("95osj3fUD7fo0mlYdDbncXz4VD2igvf0"), []byte("0Pf2r0wZBpXVXlQNdpwCXN4ncnlnZSc3"))
 
-	if err != nil {
-		panic(err)
-	}
-	e.Use(sessions.Sessions("mysession", store))
-	e.Use(middleware.NewLoginMiddlewareBuilder().
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//	e.Use(sessions.Sessions("mysession", store))
+	//	e.Use(middleware.NewLoginMiddlewareBuilder().
+	//		IgnorePaths("/users/signup").
+	//		IgnorePaths("/users/login").Build())
+	e.Use(middleware.NewLoginJWTMiddlewareBuilder().
 		IgnorePaths("/users/signup").
-		IgnorePaths("/users/login").Build())
+		IgnorePaths("/users/loginJWT").Build())
 	return e
 }
