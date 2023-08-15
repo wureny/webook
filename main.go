@@ -3,11 +3,13 @@ package main
 import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/wureny/webook/webook/Internal/repository"
 	"github.com/wureny/webook/webook/Internal/repository/dao"
 	"github.com/wureny/webook/webook/Internal/service"
 	"github.com/wureny/webook/webook/Internal/web"
 	"github.com/wureny/webook/webook/Internal/web/middleware"
+	"github.com/wureny/webook/webook/pkg/ginx/middleware/ratelimit"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"net/http"
@@ -68,6 +70,10 @@ func initUser(db *gorm.DB) *web.UserHandler {
 }
 func initWebServer() *gin.Engine {
 	e := gin.Default()
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	e.Use(ratelimit.NewBuilder(redisClient, time.Second, 100).Build())
 	e.Use(cors.New(cors.Config{
 		//	AllowAllOrigins:        false,
 		//	AllowOrigins:           nil,
