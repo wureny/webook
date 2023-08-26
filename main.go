@@ -1,14 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/wureny/webook/webook/Internal/repository"
+	"github.com/wureny/webook/webook/Internal/repository/cache"
 	"github.com/wureny/webook/webook/Internal/repository/dao"
 	"github.com/wureny/webook/webook/Internal/service"
 	"github.com/wureny/webook/webook/Internal/web"
 	"github.com/wureny/webook/webook/Internal/web/middleware"
+	"github.com/wureny/webook/webook/config"
 	"github.com/wureny/webook/webook/pkg/ginx/middleware/ratelimit"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -20,34 +23,24 @@ import (
 func main() {
 	db := initDB()
 	server := initWebServer()
-	user := initUser(db)
+	rdb := initRedis()
+	user := initUser(db, rdb)
 	user.RegisterRoutes(server)
+	//		server.Run(":8081")
+
+	//	server := gin.Default()
+	server.GET("/hello", func(ctx *gin.Context) {
+		ctx.String(http.StatusOK, "你好，你来了")
+	})
+
 	server.Run(":8081")
-	e := gin.Default()
-	e.Use(cors.New(cors.Config{
-		//	AllowAllOrigins:        false,
-		//	AllowOrigins:           nil,
-		//	AllowMethods:           nil,
-		AllowHeaders:     []string{"content-type", "Authorization"},
-		AllowCredentials: true,
-		//	ExposeHeaders:          nil,
-		MaxAge: 7 * time.Hour,
-		//	AllowWildcard:          false,
-		//	AllowBrowserExtensions: false,
-		//	AllowWebSockets:        false,
-		//	AllowFiles:             false,
-		AllowOriginFunc: func(origin string) bool {
-			if strings.HasPrefix(origin, "http://localhost") {
-				//开发环境，因为只有他有localhost
-				return true
-			}
-			return strings.Contains(origin, "yourcompany.com")
-		},
-	}))
-	e.Run(":8080")
 }
 func initDB() *gorm.DB {
-	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webooktest?charset=utf8mb4&parseTime=True&loc=Local"))
+	//	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webooktest?charset=utf8mb4&parseTime=True&loc=Local"))
+	//	db, err := gorm.Open(mysql.Open("root:root@tcp(webook-live-mysql:11309)/webook"))
+	db, err := gorm.Open(mysql.Open(config.Config.DB.DSN))
+	//	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:30002)/webook"))
+	fmt.Println(config.Config.DB.DSN)
 	if err != nil {
 		// 我只会在初始化过程中 panic
 		// panic 相当于整个 goroutine 结束
@@ -61,9 +54,10 @@ func initDB() *gorm.DB {
 	}
 	return db
 }
-func initUser(db *gorm.DB) *web.UserHandler {
+func initUser(db *gorm.DB, rdb redis.Cmdable) *web.UserHandler {
 	ud := dao.NewUserDAO(db)
-	repo := repository.NewUserRepository(ud)
+	uc := cache.NewUserCache(rdb)
+	repo := repository.NewUserRepository(ud, uc)
 	svc := service.NewUserService(repo)
 	u := web.NewUserHandler(svc)
 	return u
@@ -71,8 +65,11 @@ func initUser(db *gorm.DB) *web.UserHandler {
 func initWebServer() *gin.Engine {
 	e := gin.Default()
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		//		Addr: "localhost:6379",
+		//	Addr: "webook-live-redis:11479",
+		Addr: config.Config.Redis.Addr,
 	})
+	fmt.Println(config.Config.Redis.A)
 	e.Use(ratelimit.NewBuilder(redisClient, time.Second, 100).Build())
 	e.Use(cors.New(cors.Config{
 		//	AllowAllOrigins:        false,
@@ -116,4 +113,11 @@ func initWebServer() *gin.Engine {
 		IgnorePaths("/users/signup").
 		IgnorePaths("/users/loginJWT").Build())
 	return e
+}
+
+func initRedis() redis.Cmdable {
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: config.Config.Redis.Addr,
+	})
+	return redisClient
 }
