@@ -15,12 +15,15 @@ import (
 
 type ArticleHandler struct {
 	svc service.ArticleService
-	int service.InteractiveService
+	inte service.InteractiveService
 	biz string
 }
 
-func NewArticleHandler(svc service.ArticleService) handler {
-	return &ArticleHandler{svc: svc}
+func NewArticleHandler(svc service.ArticleService,inte service.InteractiveService) handler {
+	return &ArticleHandler{
+		svc: svc
+		inte: inte
+	}
 }
 
 func (a *ArticleHandler) RegisterRoutes(server *gin.Engine) {

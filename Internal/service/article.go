@@ -17,15 +17,6 @@ type ArticleService interface {
 	GetPublishedById(ctx context.Context, id int64) (domain.Article, error)
 }
 
-type InteractiveService struct {
-	ArticleId   int64
-	biz         string
-	bizid       int64
-	read_cnt    int64
-	like_cnt    int64
-	comment_cnt int64
-}
-
 type articleService struct {
 	repo article.ArticleRepository
 

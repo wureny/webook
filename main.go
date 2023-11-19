@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+// TODO 探寻初始化的方式
 func main() {
 	/*db := initDB()
 	server := initWebServer()
