@@ -9,10 +9,11 @@ import (
 	"github.com/wureny/webook/webook/Internal/repository/cache"
 	"github.com/wureny/webook/webook/Internal/repository/dao"
 	"github.com/wureny/webook/webook/Internal/service"
+	"github.com/wureny/webook/webook/Internal/service/sms/memory"
 	"github.com/wureny/webook/webook/Internal/web"
+	"github.com/wureny/webook/webook/Internal/web/jwt"
 	"github.com/wureny/webook/webook/Internal/web/middleware"
 	"github.com/wureny/webook/webook/config"
-	"github.com/wureny/webook/webook/pkg/ginx/middleware/ratelimit"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"net/http"
@@ -21,19 +22,24 @@ import (
 )
 
 func main() {
-	db := initDB()
+	/*db := initDB()
 	server := initWebServer()
 	rdb := initRedis()
 	user := initUser(db, rdb)
-	user.RegisterRoutes(server)
+	user.RegisterRoute(server)*/
 	//		server.Run(":8081")
 
 	//	server := gin.Default()
+	server := initWebServer()
 	server.GET("/hello", func(ctx *gin.Context) {
+		fmt.Println("tttest")
 		ctx.String(http.StatusOK, "你好，你来了")
 	})
-
-	server.Run(":8081")
+	fmt.Println("halo")
+	server.GET("/try", func(ctx *gin.Context) {
+		fmt.Println("nice try")
+	})
+	server.Run(":8083")
 }
 func initDB() *gorm.DB {
 	//	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:13316)/webooktest?charset=utf8mb4&parseTime=True&loc=Local"))
@@ -41,6 +47,7 @@ func initDB() *gorm.DB {
 	db, err := gorm.Open(mysql.Open(config.Config.DB.DSN))
 	//	db, err := gorm.Open(mysql.Open("root:root@tcp(localhost:30002)/webook"))
 	fmt.Println(config.Config.DB.DSN)
+	fmt.Println("fuck")
 	if err != nil {
 		// 我只会在初始化过程中 panic
 		// panic 相当于整个 goroutine 结束
@@ -59,18 +66,30 @@ func initUser(db *gorm.DB, rdb redis.Cmdable) *web.UserHandler {
 	uc := cache.NewUserCache(rdb)
 	repo := repository.NewUserRepository(ud, uc)
 	svc := service.NewUserService(repo)
-	u := web.NewUserHandler(svc)
+	codeCache := cache.NewCodeCache(rdb)
+	codeRepo := repository.NewCodeRepository(codeCache)
+	smsSvc := memory.NewService()
+	codeSvc := service.NewCodeService(codeRepo, &smsSvc)
+	jwtHandler := jwt.NewRedisJWTHandler(rdb)
+	u := web.NewUserHandler(svc, codeSvc, jwtHandler)
 	return u
 }
 func initWebServer() *gin.Engine {
 	e := gin.Default()
-	redisClient := redis.NewClient(&redis.Options{
-		//		Addr: "localhost:6379",
-		//	Addr: "webook-live-redis:11479",
-		Addr: config.Config.Redis.Addr,
+	e.Use(func(ctx *gin.Context) {
+		println("这是第一个 middleware")
 	})
+
+	e.Use(func(ctx *gin.Context) {
+		fmt.Println("first middleware")
+	})
+	//redisClient := redis.NewClient(&redis.Options{
+	//		Addr: "localhost:6379",
+	//	Addr: "webook-live-redis:11479",
+	//	Addr: config.Config.Redis.Addr,
+	//	})
 	fmt.Println(config.Config.Redis.A)
-	e.Use(ratelimit.NewBuilder(redisClient, time.Second, 100).Build())
+	//e.Use(ratelimit.NewBuilder(redisClient, time.Second, 100).Build())
 	e.Use(cors.New(cors.Config{
 		//	AllowAllOrigins:        false,
 		//	AllowOrigins:           nil,
@@ -109,10 +128,18 @@ func initWebServer() *gin.Engine {
 	//	e.Use(middleware.NewLoginMiddlewareBuilder().
 	//		IgnorePaths("/users/signup").
 	//		IgnorePaths("/users/login").Build())
-	e.Use(middleware.NewLoginJWTMiddlewareBuilder().
+	jwtHandler := jwt.NewRedisJWTHandler(initRedis())
+	e.Use(middleware.NewLoginJWTMiddlewareBuilder(jwtHandler).
 		IgnorePaths("/users/signup").
+		IgnorePaths("/hello").
+		IgnorePaths("/login_sms/code/send").
+		IgnorePaths("/login_sms").
 		IgnorePaths("/users/loginJWT").Build())
 	return e
+}
+
+func mid(ctx *gin.Context) {
+	fmt.Println("first middleware")
 }
 
 func initRedis() redis.Cmdable {

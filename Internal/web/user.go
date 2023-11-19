@@ -6,19 +6,32 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 	"github.com/wureny/webook/webook/Internal/domain"
 	"github.com/wureny/webook/webook/Internal/service"
+	ijwt "github.com/wureny/webook/webook/Internal/web/jwt"
 	"net/http"
 	"time"
 )
 
+const biz = "login"
+
+var _ handler = (*UserHandler)(nil)
+
 type UserHandler struct {
-	svc         *service.UserService
+	svc         service.UserService
 	emailExp    *regexp.Regexp
 	passwordExp *regexp.Regexp
+	codeSvc     *service.CodeService
+	ijwt.Handler
+	cmd redis.Cmdable
 }
 
-func NewUserHandler(svc *service.UserService) *UserHandler {
+func (u *UserHandler) RegisterRoutes(server *gin.Engine) {
+
+}
+
+func NewUserHandler(svc service.UserService, codeSvc *service.CodeService, jwtHdl ijwt.Handler) *UserHandler {
 	const (
 		emailRegexPattern    = "^\\w+([-+.]\\w+)*@\\w+([-.]\\w+)*\\.\\w+([-.]\\w+)*$"
 		passwordRegexPattern = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[$@$!%*#?&])[A-Za-z\\d$@$!%*#?&]{8,}$"
@@ -29,8 +42,55 @@ func NewUserHandler(svc *service.UserService) *UserHandler {
 		svc:         svc,
 		emailExp:    emailExp,
 		passwordExp: passwordExp,
+		codeSvc:     codeSvc,
+		Handler:     jwtHdl,
 	}
 }
+
+func (u *UserHandler) LogoutJWT(ctx *gin.Context) {
+	err := u.ClearToken(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 5,
+			Msg:  "退出登录失败",
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, Result{
+		Msg: "退出登录OK",
+	})
+}
+
+// RefreshToken 可以同时刷新长短 token，用 redis 来记录是否有效，即 refresh_token 是一次性的
+// 参考登录校验部分，比较 User-Agent 来增强安全性
+func (u *UserHandler) RefreshToken(ctx *gin.Context) {
+	// 只有这个接口，拿出来的才是 refresh_token，其它地方都是 access token
+	refreshToken := u.ExtractToken(ctx)
+	var rc ijwt.RefreshClaims
+	token, err := jwt.ParseWithClaims(refreshToken, &rc, func(token *jwt.Token) (interface{}, error) {
+		return ijwt.RtKey, nil
+	})
+	if err != nil || !token.Valid {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	err = u.CheckSession(ctx, rc.Ssid)
+	if err != nil {
+		// 要么 redis 有问题，要么已经退出登录
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	// 生成新的 token
+	err = u.SetJWTToken(ctx, rc.Uid, rc.Ssid)
+	if err != nil {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	ctx.JSON(http.StatusOK, Result{
+		Msg: "刷新成功",
+	})
+}
+
 func (u *UserHandler) SignUp(ctx *gin.Context) {
 	//内部结构
 	type SignUpReq struct {
@@ -152,7 +212,7 @@ func (u *UserHandler) Edit(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Bio is too long!")
 		return
 	}
-	userID, _ := userid.(uint64)
+	userID, _ := userid.(int64)
 	e := u.svc.Edit(ctx, domain.User{
 		Id:       userID,
 		Birthday: s.Birthday,
@@ -175,7 +235,7 @@ func (u *UserHandler) Profile(ctx *gin.Context) {
 	}
 	session := sessions.Default(ctx)
 	userid := session.Get("userId")
-	userId := userid.(uint64)
+	userId := userid.(int64)
 	user, err := u.svc.GetUser(ctx, userId)
 	if err != nil {
 		ctx.String(http.StatusOK, "failed to get the info")
@@ -192,7 +252,7 @@ func (u *UserHandler) Profile(ctx *gin.Context) {
 
 type UserClaims struct {
 	jwt.RegisteredClaims
-	Uid       uint64
+	Uid       int64
 	UserAgent string
 }
 
@@ -219,26 +279,34 @@ func (u *UserHandler) LoginJWT(ctx *gin.Context) {
 	// 步骤2
 	// 在这里用 JWT 设置登录态
 	// 生成一个 JWT token
-	claims := UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 10)),
-		},
-		Uid:       user.Id,
-		UserAgent: ctx.Request.UserAgent(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
-	tokenStr, err := token.SignedString([]byte("95osj3fUD7fo0mlYdDbncXz4VD2igvf0"))
-	if err != nil {
-		ctx.String(http.StatusInternalServerError, "系统错误")
+	if err := u.setJWTToken(ctx, user.Id); err != nil {
+		ctx.String(http.StatusOK, "系统错误")
 		return
 	}
-	ctx.Header("x-jwt-token", tokenStr)
 	fmt.Println(user)
 	ctx.String(http.StatusOK, "登录成功")
 	return
 }
 
+func (u *UserHandler) setJWTToken(ctx *gin.Context, uid int64) error {
+	claims := UserClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 10)),
+		},
+		Uid:       uid,
+		UserAgent: ctx.Request.UserAgent(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
+	tokenStr, err := token.SignedString([]byte("95osj3fUD7fo0mlYdDbncXz4VD2igvf0"))
+	if err != nil {
+		return err
+	}
+	ctx.Header("x-jwt-token", tokenStr)
+	return nil
+}
+
 func (u *UserHandler) ProfileJWT(ctx *gin.Context) {
+	fmt.Println("this is profilejwt")
 	c, _ := ctx.Get("claims")
 	// 你可以断定，必然有 claims
 	//if !ok {
@@ -247,6 +315,7 @@ func (u *UserHandler) ProfileJWT(ctx *gin.Context) {
 	//	return
 	//}
 	// ok 代表是不是 *UserClaims
+	fmt.Println("getting profilejwt")
 	claims, ok := c.(*UserClaims)
 	if !ok {
 		// 你可以考虑监控住这里
@@ -324,4 +393,94 @@ func (u *UserHandler) EditJWT(ctx *gin.Context) {
 		return
 	}
 	ctx.String(http.StatusOK, "edit成功")
+}
+
+func (u *UserHandler) LoginSMS(ctx *gin.Context) {
+	type Req struct {
+		Phone string `json:"phone"`
+		Code  string `json:"code"`
+	}
+	var req Req
+	biz := "login"
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+
+	// 这边，可以加上各种校验
+	ok, err := u.codeSvc.Verify(ctx, biz, req.Phone, req.Code)
+	if err != nil {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 5,
+			Msg:  "系统错误",
+		})
+		return
+	}
+	if !ok {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 4,
+			Msg:  "验证码有误",
+		})
+		return
+	}
+
+	// 我这个手机号，会不会是一个新用户呢？
+	// 这样子
+	user, err := u.svc.FindOrCreate(ctx, req.Phone)
+	if err != nil {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 5,
+			Msg:  "系统错误",
+		})
+		return
+	}
+
+	// 这边要怎么办呢？
+	// 从哪来？
+	if err = u.setJWTToken(ctx, user.Id); err != nil {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 5,
+			Msg:  "系统错误",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, Result{
+		Msg: "验证码校验通过",
+	})
+}
+
+func (u *UserHandler) SendLoginSMSCode(ctx *gin.Context) {
+	type Req struct {
+		Phone string `json:"phone"`
+	}
+	var req Req
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+	// 是不是一个合法的手机号码
+	// 考虑正则表达式
+	if req.Phone == "" {
+		ctx.JSON(http.StatusOK, Result{
+			Code: 4,
+			Msg:  "输入有误",
+		})
+		return
+	}
+	biz := "login"
+	err := u.codeSvc.Send(ctx, biz, req.Phone)
+	switch err {
+	case nil:
+		ctx.JSON(http.StatusOK, Result{
+			Msg: "发送成功",
+		})
+	case service.ErrCodeSendTooMany:
+		ctx.JSON(http.StatusOK, Result{
+			Msg: "发送太频繁，请稍后再试",
+		})
+	default:
+		ctx.JSON(http.StatusOK, Result{
+			Code: 5,
+			Msg:  "系统错误",
+		})
+	}
 }

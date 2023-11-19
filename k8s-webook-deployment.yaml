@@ -20,4 +20,4 @@ spec:
         - name: webook
           image: wureny/webook-live:v0.0.1
           ports:
-            - containerPort: 8081
+            - containerPort: 8083

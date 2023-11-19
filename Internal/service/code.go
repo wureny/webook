@@ -5,14 +5,31 @@ import (
 	"fmt"
 	"github.com/wureny/webook/webook/Internal/repository"
 	"github.com/wureny/webook/webook/Internal/service/sms"
+	"go.uber.org/atomic"
 	"math/rand"
 )
 
-const codeTplId = "1877556"
+// const codeTplId = "1877556"
+var codeTplId atomic.String = atomic.String{}
+
+var (
+	// ErrCodeVerifyTooManyTimes 验证太多次，是系统用来判断是否为非正常用户的方法之一，用户并不关心
+	ErrCodeVerifyTooManyTimes = repository.ErrCodeVerifyTooManyTimes
+	// ErrCodeSendTooMany 发送太频繁，用户需要关心
+	ErrCodeSendTooMany = repository.ErrCodeSendTooMany
+)
 
 type CodeService struct {
 	smsSvc sms.Service
 	repo   *repository.CodeRepository
+}
+
+func NewCodeService(repo *repository.CodeRepository, smsSvc sms.Service) *CodeService {
+	codeTplId.Store("1877556")
+	return &CodeService{
+		smsSvc: smsSvc,
+		repo:   repo,
+	}
 }
 
 func (svc *CodeService) generateCode() string {
@@ -20,7 +37,7 @@ func (svc *CodeService) generateCode() string {
 	num := rand.Intn(1000000)
 	// 不够六位的，加上前导 0
 	// 000001
-	return fmt.Sprintf("%6d", num)
+	return fmt.Sprintf("%06d", num)
 }
 
 func (svc *CodeService) Send(ctx context.Context,
@@ -39,7 +56,7 @@ func (svc *CodeService) Send(ctx context.Context,
 
 	// 发送出去
 
-	err = svc.smsSvc.Send(ctx, codeTplId, []string{code}, phone)
+	err = svc.smsSvc.Send(ctx, codeTplId.Load(), []string{code}, phone)
 	//if err != nil {
 	// 这个地方怎么办？
 	// 这意味着，Redis 有这个验证码，但是不好意思，
